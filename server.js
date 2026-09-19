@@ -140,13 +140,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/api/health') return send(res, 200, { ok: true, database: DB_PATH });
     if (req.method === 'POST' && req.url === '/api/parse-timetable') {
       if (!process.env.GEMINI_API_KEY) return send(res, 503, { error: 'Gemini is not configured. Set GEMINI_API_KEY on the server.' });
-      const { text } = JSON.parse(await collect(req));
-      if (!text || String(text).length > 10000) return send(res, 400, { error: 'Please provide timetable text under 10,000 characters.' });
-      const prompt = `You extract a college timetable. Return ONLY a valid JSON array, with no Markdown or explanation. Each item must have exactly these string fields: day, subject, time, teacher. Use one of Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday for day. If time or teacher is missing, use an empty string. Do not invent classes. Timetable text:\n${String(text)}`;
+      const { text, file } = JSON.parse(await collect(req));
+      if ((!text || !String(text).trim()) && !file) return send(res, 400, { error: 'Please provide timetable text or upload an image/PDF.' });
+      if (text && String(text).length > 10000) return send(res, 400, { error: 'Please provide timetable text under 10,000 characters.' });
+      if (file && (!file.mimeType || !file.data || String(file.data).length > 12_000_000)) return send(res, 400, { error: 'That file is missing, too large, or unsupported.' });
+      const prompt = `You extract a college timetable from the supplied text or image/PDF. Return ONLY a valid JSON array, with no Markdown or explanation. Each item must have exactly these string fields: day, subject, time, teacher. Use one of Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday for day. If time or teacher is missing, use an empty string. Do not invent classes.${text ? ` Timetable text:\n${String(text)}` : ' Read the uploaded timetable carefully.'}`;
+      const parts = [{ text: prompt }];
+      if (file) parts.push({ inline_data: { mime_type: String(file.mimeType), data: String(file.data) } });
       const apiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + encodeURIComponent(process.env.GEMINI_API_KEY), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, responseMimeType: 'application/json' } })
+        body: JSON.stringify({ contents: [{ parts }], generationConfig: { temperature: 0.1, responseMimeType: 'application/json' } })
       });
       const payload = await apiResponse.json();
       if (!apiResponse.ok) return send(res, 502, { error: payload?.error?.message || 'Gemini request failed' });

@@ -21,7 +21,7 @@ Open <http://localhost:4173> in a browser.
 
 The included `render.yaml` configures a Node web service with a persistent disk. Upload this folder to a GitHub repository, create a new Render Blueprint from that repository, and deploy. Render persistent disks may require a paid instance depending on your plan.
 
-## Gemini AI timetable autofill
+## Gemini AI timetable autofill (text, CSV, images, and PDFs)
 
 The backend includes a secure `POST /api/parse-timetable` endpoint. Set `GEMINI_API_KEY` as a server environment variable; never put the key in `index.html`, GitHub, or chat. When running locally:
 
