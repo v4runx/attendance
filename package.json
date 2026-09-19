@@ -1,0 +1,8 @@
+{
+  "name": "attendly",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Personal college attendance calculator with SQLite persistence",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=22.5.0" }
+}

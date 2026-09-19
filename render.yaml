@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: attendly
+    runtime: node
+    buildCommand: ""
+    startCommand: "node server.js"
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: attendly-data
+      mountPath: /var/data
+      sizeGB: 1
