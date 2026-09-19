@@ -114,12 +114,44 @@ function collect(req) {
   });
 }
 
+function parseGeminiResponse(payload) {
+  const raw = payload?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+  const match = raw.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error('Gemini returned an unexpected format');
+  const parsed = JSON.parse(match[0]);
+  if (!Array.isArray(parsed)) throw new Error('Gemini did not return a timetable list');
+  const allowedDays = new Set(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
+  return parsed
+    .map((row, index) => ({
+      id: `ai-${Date.now()}-${index}`,
+      day: String(row.day || '').trim(),
+      subject: String(row.subject || '').trim(),
+      time: String(row.time || '').trim(),
+      teacher: String(row.teacher || '').trim()
+    }))
+    .filter(row => allowedDays.has(row.day) && row.subject);
+}
+
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8' };
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'OPTIONS') return send(res, 204, '');
     if (req.method === 'GET' && req.url === '/api/state') return send(res, 200, readState());
     if (req.method === 'GET' && req.url === '/api/health') return send(res, 200, { ok: true, database: DB_PATH });
+    if (req.method === 'POST' && req.url === '/api/parse-timetable') {
+      if (!process.env.GEMINI_API_KEY) return send(res, 503, { error: 'Gemini is not configured. Set GEMINI_API_KEY on the server.' });
+      const { text } = JSON.parse(await collect(req));
+      if (!text || String(text).length > 10000) return send(res, 400, { error: 'Please provide timetable text under 10,000 characters.' });
+      const prompt = `You extract a college timetable. Return ONLY a valid JSON array, with no Markdown or explanation. Each item must have exactly these string fields: day, subject, time, teacher. Use one of Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday for day. If time or teacher is missing, use an empty string. Do not invent classes. Timetable text:\n${String(text)}`;
+      const apiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + encodeURIComponent(process.env.GEMINI_API_KEY), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, responseMimeType: 'application/json' } })
+      });
+      const payload = await apiResponse.json();
+      if (!apiResponse.ok) return send(res, 502, { error: payload?.error?.message || 'Gemini request failed' });
+      return send(res, 200, { items: parseGeminiResponse(payload) });
+    }
     if (req.method === 'PUT' && req.url === '/api/state') {
       const body = JSON.parse(await collect(req));
       writeState(body);
